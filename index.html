@@ -22,20 +22,24 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 
 const SERVICES = [
-  { id:"wash",      name:"Basic Wash",       price:25  },
-  { id:"polish",    name:"Polish & Wax",      price:80  },
-  { id:"detail",    name:"Full Detail",       price:150 },
-  { id:"interior",  name:"Interior Clean",    price:60  },
+  { id:"anti-bac",    name:"Anti-bac",      price:25 },
   { id:"ceramic",   name:"Ceramic Coating",   price:350 },
-  { id:"ppf",      name:"PPF",               price:200 },
+  { id:"detail",    name:"Full Detail",       price:150 },
   { id:"engine",    name:"Engine Bay Clean",  price:90  },
   { id:"headlight", name:"Headlight Restore", price:45  },
+  { id:"interior",  name:"Interior Clean",    price:60  },
+  { id:"polish",    name:"Polish & Wax",      price:80  },
+  { id:"ppf",      name:"PPF",               price:200 },
+  { id:"waterwax",    name:"Waterwax",      price:42 },
+  { id:"wash",      name:"Basic Wash",       price:25  },
+  { id:"windscreenpolish",      name:"Windscreen polish",    price:100 },
 ];
 const CAR_TYPES    = ["Sedan","SUV","Hatchback","MPV","Pickup","Sports","Van"];
-const PAY_METHODS  = ["Cash","Card","eWallet"];
+const PAY_METHODS  = ["Cash","BankIn","QR","eWallet"];
 const PAY_COLORS   = {
   Cash:    { bg:"#dcfce7", text:"#166534" },
-  Card:    { bg:"#dbeafe", text:"#1e40af" },
+  BankIn:    { bg:"#dbeafe", text:"#1e40af" },
+  QR:      { bg: "#fef3c7", text: "#92400e" },
   eWallet: { bg:"#f3e8ff", text:"#6b21a8" },
 };
 const MONTH_NAMES  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -302,19 +306,12 @@ function App() {
         <div style={{ fontSize:13, color:"#9ca3af", marginTop:4 }}>Car Salon Sales Tracker</div>
       </div>
       <div style={{ background:"#fff", borderRadius:20, padding:"24px 20px", boxShadow:"0 2px 8px rgba(0,0,0,0.08)" }}>
-        <div style={{ fontWeight:700, fontSize:15, color:"#111827", marginBottom:4 }}>Paste your Web App URL</div>
-        <div style={{ fontSize:12, color:"#9ca3af", marginBottom:16, lineHeight:1.6 }}>Google Sheet → Extensions → Apps Script → Deploy → Web App URL</div>
-        <Field label="Web App URL">
+        <div style={{ fontWeight:700, fontSize:15, color:"#111827", marginBottom:4 }}>WEB APP URL</div>
+        <Field label="Paste Google Sheet URL">
           <input placeholder="https://script.google.com/macros/s/..." value={urlInput} onChange={e=>setUrlInput(e.target.value)} style={{...iStyle,fontSize:12}}/>
         </Field>
         <button onClick={()=>connectScript()} disabled={connecting||!urlInput.trim()} style={{ width:"100%", padding:16, borderRadius:14, border:"none", fontSize:15, fontWeight:800, background:urlInput.trim()?"#ef4444":"#e5e7eb", color:urlInput.trim()?"#fff":"#9ca3af", cursor:urlInput.trim()?"pointer":"not-allowed" }}>
           {connecting?"Connecting…":"Connect & Start"}
-        </button>
-        <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0 4px" }}>
-          <div style={{ flex:1, height:1, background:"#e5e7eb" }}/><span style={{ fontSize:11, color:"#9ca3af" }}>or</span><div style={{ flex:1, height:1, background:"#e5e7eb" }}/>
-        </div>
-        <button onClick={loadDemo} style={{ width:"100%", padding:14, borderRadius:14, border:"1.5px solid #e5e7eb", fontSize:14, fontWeight:700, background:"#f9fafb", color:"#374151", cursor:"pointer" }}>
-          🧪 Try Demo Mode
         </button>
       </div>
       <Toast msg={toast.msg} type={toast.type}/>
@@ -421,9 +418,9 @@ function App() {
               <Field label="Service"><select value={form.service} onChange={e=>handleSvc(e.target.value)} style={iStyle}>{SERVICES.map(s=><option key={s.id}>{s.name}</option>)}</select></Field>
               <Field label="Price (RM)"><input type="number" min="0" step="0.01" value={form.price} onChange={e=>setField("price",e.target.value)} style={iStyle}/></Field>
               <Field label="Payment Method">
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                <div style={{ display:"grid", gridTemplateColumns: "repeat(4, 1fr)", gap:8 }}>
                   {PAY_METHODS.map(p=>(
-                    <button key={p} onClick={()=>setField("payment",p)} style={{ padding:"12px 0", borderRadius:10, border:"2px solid", cursor:"pointer", fontSize:13, fontWeight:700, borderColor:form.payment===p?PAY_COLORS[p].text:"#e5e7eb", background:form.payment===p?PAY_COLORS[p].bg:"#f9fafb", color:form.payment===p?PAY_COLORS[p].text:"#9ca3af" }}>{p}</button>
+                    <button key={p} onClick={()=>setField("payment",p)} style={{ padding:"12px 0", borderRadius:10, border:"2px solid", cursor:"pointer", fontSize:13, fontWeight:120, borderColor:form.payment===p?PAY_COLORS[p].text:"#e5e7eb", background:form.payment===p?PAY_COLORS[p].bg:"#f9fafb", color:form.payment===p?PAY_COLORS[p].text:"#9ca3af" }}>{p}</button>
                   ))}
                 </div>
               </Field>
