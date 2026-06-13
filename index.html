@@ -47,7 +47,11 @@ const MONTH_NAMES  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct
 
 const todayStr        = () => new Date().toISOString().split("T")[0];
 const fmt             = n  => `RM${Number(n).toFixed(2)}`;
-const emptyForm       = () => ({ date:todayStr(), customer:"", carPlate:"", carType:"Sedan", service:"Basic Wash", price:25, payment:"Cash", notes:"", paid:true });
+const emptyForm       = () => ({ date:todayStr(), customer:"", carPlate:"", carType:"Sedan", services:["Basic Wash"], price:25, payment:"Cash", notes:"", paid:true });
+
+// Helpers to handle both old (string) and new (array) service formats from sheet
+const getServices = r => Array.isArray(r.services) ? r.services : (r.service ? String(r.service).split(",").map(s=>s.trim()).filter(Boolean) : []);
+const servicesText = r => getServices(r).join(", ") || "—";
 const currentYM       = () => { const d=new Date(); return { y:d.getFullYear(), m:d.getMonth() }; };
 const getDaysInMonth  = (y,m) => new Date(y,m+1,0).getDate();
 let   _uid            = Date.now();
@@ -227,11 +231,24 @@ function App() {
   const deleteRec = async id=> { if(isDemo){showToast("Demo mode — not saved","info");return;} setSyncing(true); try { await apiCall(scriptUrl,{action:"delete",id});       showToast("Deleted ✓","success"); } catch { showToast("Sync failed — deleted locally","error"); } setSyncing(false); };
 
   const setField = (k,v) => setForm(f=>({...f,[k]:v}));
-  const handleSvc = svc => { const f=SERVICES.find(s=>s.name===svc); setForm(f2=>({...f2,service:svc,price:f?f.price:f2.price})); };
+  const toggleService = svc => {
+    setForm(f => {
+      const current = Array.isArray(f.services) ? f.services : [];
+      const next = current.includes(svc) ? current.filter(s=>s!==svc) : [...current, svc];
+      // Auto-sum prices of selected services
+      const newPrice = next.reduce((sum, name) => {
+        const found = SERVICES.find(s=>s.name===name);
+        return sum + (found ? found.price : 0);
+      }, 0);
+      return { ...f, services: next, price: newPrice || f.price };
+    });
+  };
 
   const handleSubmit = async () => {
-    if (!form.customer.trim()||!form.carPlate.trim()) return;
-    const entry={...form,price:Number(form.price)};
+    if (!form.customer.trim()||!form.carPlate.trim()||(form.services||[]).length===0) return;
+    // Normalise: ensure services is an array, remove legacy single-string service field
+    const { service, ...rest } = form;
+    const entry = { ...rest, services: form.services || [], price: Number(form.price) };
     if (editId) {
       const rec={...entry,id:editId};
       setRecords(rs=>{ const next=rs.map(r=>r.id===editId?rec:r); saveRecordsCache(next); return next; });
@@ -245,7 +262,7 @@ function App() {
     setForm(emptyForm()); setTab("home");
   };
 
-  const startEdit     = r  => { setForm({...r}); setEditId(r.id); setDetailId(null); setTab("add"); };
+  const startEdit     = r  => { setForm({ ...r, services: getServices(r) }); setEditId(r.id); setDetailId(null); setTab("add"); };
   const cancelForm    = () => { setForm(emptyForm()); setEditId(null); setTab("home"); };
   const confirmDelete = async id => {
     setRecords(rs=>{ const next=rs.filter(r=>r.id!==id); saveRecordsCache(next); return next; });
@@ -259,7 +276,9 @@ function App() {
     const bySvc={},byPay={};
     let paidTotal=0, unpaidTotal=0, unpaidCount=0;
     filtered.forEach(r=>{
-      bySvc[r.service]=(bySvc[r.service]||0)+Number(r.price);
+      const svcs = getServices(r);
+      const split = svcs.length>0 ? Number(r.price)/svcs.length : Number(r.price);
+      svcs.forEach(s => { bySvc[s] = (bySvc[s]||0) + split; });
       byPay[r.payment]=(byPay[r.payment]||0)+Number(r.price);
       if (r.paid===false) { unpaidTotal+=Number(r.price); unpaidCount++; }
       else                { paidTotal+=Number(r.price); }
@@ -393,7 +412,7 @@ function App() {
                     <div style={{ display:"flex", gap:6, marginTop:5, flexWrap:"wrap", alignItems:"center" }}>
                       <span style={{ fontSize:11, fontFamily:"monospace", background:"#f3f4f6", padding:"2px 7px", borderRadius:5, color:"#374151", fontWeight:600 }}>{r.carPlate}</span>
                       <span style={{ fontSize:12, color:"#6b7280" }}>{r.carType}</span>
-                      <span style={{ fontSize:12, color:"#374151" }}>· {r.service}</span>
+                      <span style={{ fontSize:12, color:"#374151" }}>· {servicesText(r)}</span>
                     </div>
                     <div style={{ marginTop:6, display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
                       <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20, background:PAY_COLORS[r.payment]?.bg, color:PAY_COLORS[r.payment]?.text }}>{r.payment}</span>
@@ -416,7 +435,26 @@ function App() {
               <Field label="Customer Name *"><input placeholder="Full name" value={form.customer} onChange={e=>setField("customer",e.target.value)} style={iStyle}/></Field>
               <Field label="Car Plate *"><input placeholder="e.g. WXY 1234" value={form.carPlate} onChange={e=>setField("carPlate",e.target.value.toUpperCase())} style={{...iStyle,fontFamily:"monospace",letterSpacing:2}}/></Field>
               <Field label="Car Type"><select value={form.carType} onChange={e=>setField("carType",e.target.value)} style={iStyle}>{CAR_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
-              <Field label="Service"><select value={form.service} onChange={e=>handleSvc(e.target.value)} style={iStyle}>{SERVICES.map(s=><option key={s.id}>{s.name}</option>)}</select></Field>
+              <Field label="Services (tap to select multiple)">
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  {SERVICES.map(s=>{
+                    const selected = (form.services||[]).includes(s.name);
+                    return (
+                      <button key={s.id} onClick={()=>toggleService(s.name)} style={{
+                        padding:"8px 12px", borderRadius:20, border:"2px solid", cursor:"pointer", fontSize:12, fontWeight:600,
+                        borderColor: selected ? "#ef4444" : "#e5e7eb",
+                        background:  selected ? "#fef2f2" : "#f9fafb",
+                        color:       selected ? "#b91c1c" : "#6b7280"
+                      }}>
+                        {selected ? "✓ " : ""}{s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(form.services||[]).length === 0 && (
+                  <div style={{ fontSize:11, color:"#ef4444", marginTop:6 }}>Please select at least one service</div>
+                )}
+              </Field>
               <Field label="Price (RM)"><input type="number" min="0" step="0.01" value={form.price} onChange={e=>setField("price",e.target.value)} style={iStyle}/></Field>
               <Field label="Payment Method">
                 <div style={{ display:"grid", gridTemplateColumns: "repeat(4, 1fr)", gap:8 }}>
@@ -434,7 +472,7 @@ function App() {
               <Field label="Notes"><input placeholder="Optional notes..." value={form.notes} onChange={e=>setField("notes",e.target.value)} style={iStyle}/></Field>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:10, marginTop:8 }}>
                 <button onClick={cancelForm} style={{ padding:15, borderRadius:12, border:"1.5px solid #e5e7eb", background:"#f9fafb", color:"#6b7280", fontSize:14, fontWeight:700, cursor:"pointer" }}>Cancel</button>
-                <button onClick={handleSubmit} disabled={!form.customer.trim()||!form.carPlate.trim()||syncing} style={{ padding:15, borderRadius:12, border:"none", fontSize:15, fontWeight:800, background:form.customer.trim()&&form.carPlate.trim()?"#ef4444":"#e5e7eb", color:form.customer.trim()&&form.carPlate.trim()?"#fff":"#9ca3af", cursor:form.customer.trim()&&form.carPlate.trim()?"pointer":"not-allowed" }}>
+                <button onClick={handleSubmit} disabled={!form.customer.trim()||!form.carPlate.trim()||(form.services||[]).length===0||syncing} style={{ padding:15, borderRadius:12, border:"none", fontSize:15, fontWeight:800, background:form.customer.trim()&&form.carPlate.trim()&&(form.services||[]).length>0?"#ef4444":"#e5e7eb", color:form.customer.trim()&&form.carPlate.trim()&&(form.services||[]).length>0?"#fff":"#9ca3af", cursor:form.customer.trim()&&form.carPlate.trim()&&(form.services||[]).length>0?"pointer":"not-allowed" }}>
                   {syncing?"Saving…":editId?"Save Changes":"Add Record +"}
                 </button>
               </div>
@@ -518,7 +556,7 @@ function App() {
                     <div key={r.id} onClick={()=>setDetailId(r.id)} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid #f3f4f6", cursor:"pointer" }}>
                       <div>
                         <div style={{ fontWeight:600, fontSize:14, color:"#111827" }}>{r.customer}</div>
-                        <div style={{ fontSize:12, color:"#9ca3af" }}>{r.service} · <span style={{ fontFamily:"monospace" }}>{r.carPlate}</span></div>
+                        <div style={{ fontSize:12, color:"#9ca3af" }}>{servicesText(r)} · <span style={{ fontFamily:"monospace" }}>{r.carPlate}</span></div>
                       </div>
                       <div style={{ textAlign:"right" }}>
                         <div style={{ fontWeight:800, fontSize:14, color:"#16a34a" }}>{fmt(r.price)}</div>
@@ -532,7 +570,12 @@ function App() {
             {monthData.count>0 && (
               <div style={{ background:"#fff", borderRadius:16, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,0.07)" }}>
                 <div style={{ fontWeight:700, fontSize:13, color:"#374151", marginBottom:12 }}>🏆 Top Services This Month</div>
-                {Object.entries(monthData.monthly.reduce((acc,r)=>{ acc[r.service]=(acc[r.service]||0)+Number(r.price); return acc; },{})).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>(
+                {Object.entries(monthData.monthly.reduce((acc,r)=>{
+                  const svcs = getServices(r);
+                  const split = svcs.length>0 ? Number(r.price)/svcs.length : Number(r.price);
+                  svcs.forEach(s => { acc[s] = (acc[s]||0) + split; });
+                  return acc;
+                },{})).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>(
                   <BarRow key={k} label={k} value={v} total={monthData.total}/>
                 ))}
               </div>
@@ -563,7 +606,7 @@ function App() {
               <span style={{ fontSize:12, fontWeight:700, padding:"3px 8px", borderRadius:20, background:PAY_COLORS[detailRecord.payment]?.bg, color:PAY_COLORS[detailRecord.payment]?.text }}>{detailRecord.payment}</span>
               <span style={{ fontSize:12, fontWeight:700, padding:"3px 8px", borderRadius:20, background:detailRecord.paid===false?"#fef3c7":"#dcfce7", color:detailRecord.paid===false?"#92400e":"#166534" }}>{detailRecord.paid===false?"⚠ Unpaid":"✓ Paid"}</span>
             </div>
-            {[["Service",detailRecord.service],["Price",fmt(detailRecord.price)],["Date",detailRecord.date],...(detailRecord.notes?[["Notes",detailRecord.notes]]:[])].map(([k,v])=>(
+            {[["Services",servicesText(detailRecord)],["Price",fmt(detailRecord.price)],["Date",detailRecord.date],...(detailRecord.notes?[["Notes",detailRecord.notes]]:[])].map(([k,v])=>(
               <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:"1px solid #f3f4f6" }}>
                 <span style={{ fontSize:13, color:"#9ca3af" }}>{k}</span>
                 <span style={{ fontSize:13, fontWeight:600, color:"#111827" }}>{v}</span>
